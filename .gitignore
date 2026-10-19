@@ -10,8 +10,8 @@ env/
 ENV/
 
 # Large datasets & raw files (DO NOT PUSH TO GIT)
-data/
-local_test_data/
+/data/
+/local_test_data/
 *.parquet
 *.feather
 *.tar
@@ -30,15 +30,15 @@ local_test_data/
 *.sbn
 
 # Model checkpoints & intermediate results
-models/
-results/
-output/
-joblib_cache/
+/models/
+/results/
+/output/
+/joblib_cache/
 *.joblib
 *.pkl
 
 # Cluster execution logs
-logs/
+/logs/
 *.out
 *.err
 

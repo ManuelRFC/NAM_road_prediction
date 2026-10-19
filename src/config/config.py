@@ -81,13 +81,12 @@ MODEL_FEATURE_REGISTRY: Dict[str, List[str]] = {
 
 @dataclass
 class PathConfig:
-    """Filesystem path configuration across FUCHS-CSC storage tiers."""
-    beegfs_root: Path = Path("/beegfs/project/road_ml")
-    features_dir: Path = Path("/beegfs/project/road_ml/data/parquet_national")
-    roads_shp: Path = Path("/beegfs/project/road_ml/data/shapefiles/DistrictRoads_with training data.shp")
+    beegfs_root: Path = Path(os.environ.get("PROJECT_DIR", "/work/fuchs/agmisc/cmiel/road_ml"))
+    features_dir: Path = Path(os.environ.get("FEATURES_DIR", "/work/fuchs/agmisc/cmiel/road_ml/data/parquet_national"))
+    roads_shp: Path = Path(os.environ.get("ROADS_SHP", "/work/fuchs/agmisc/cmiel/road_ml/data/shapefiles/DistrictRoads_with training data.shp"))
     scratch_dir: Path = Path(os.environ.get("TMPDIR", "/localscratch"))
-    output_dir: Path = Path("/beegfs/project/road_ml/results")
-    archive_tar: Path = Path("/beegfs/project/road_ml/data/national_features_v1.tar")
+    output_dir: Path = Path(os.environ.get("OUTPUT_DIR", "/work/fuchs/agmisc/cmiel/road_ml/results"))
+    archive_tar: Path = Path(os.environ.get("DATA_TAR", "/work/fuchs/agmisc/cmiel/road_ml/data/national_features_v1.tar"))
 
 @dataclass
 class RFHyperparameters:

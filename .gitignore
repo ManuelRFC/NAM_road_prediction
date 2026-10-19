@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Large datasets & raw files (DO NOT PUSH TO GIT)
+data/
+local_test_data/
+*.parquet
+*.feather
+*.tar
+*.tar.gz
+*.zip
+*.tif
+*.tiff
+
+# Shapefiles
+*.shp
+*.dbf
+*.shx
+*.cpg
+*.prj
+*.sbx
+*.sbn
+
+# Model checkpoints & intermediate results
+models/
+results/
+output/
+joblib_cache/
+*.joblib
+*.pkl
+
+# Cluster execution logs
+logs/
+*.out
+*.err
+
+# IDEs & System files
+.vscode/
+.idea/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db

@@ -10,7 +10,7 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --hint=nomultithread
 #SBATCH --mem=120G
-#SBATCH --time=10:00:00
+#SBATCH --time=05:00:00
 #SBATCH --output=/work/fuchs/agmisc/cmiel/road_ml/logs/m5_mono_%j.out
 #SBATCH --error=/work/fuchs/agmisc/cmiel/road_ml/logs/m5_mono_%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -31,11 +31,12 @@ export VECLIB_MAXIMUM_THREADS=1
 export BLIS_NUM_THREADS=1
 
 # 2. Filesystem & Storage Hierarchy Setup
-PROJECT_DIR="/work/fuchs/agmisc/cmiel/road_ml"
-CONTAINER_SIF="${PROJECT_DIR}/containers/road_ml.sif"
-DATA_TAR="${PROJECT_DIR}/data/national_features_v1.tar"
-ROADS_SHP="${PROJECT_DIR}/data/shapefiles/DistrictRoads_with training data.shp"
-OUTPUT_DIR="${PROJECT_DIR}/results/m5_monolithic_${SLURM_JOB_ID}"
+CODE_DIR="${HOME}/road_ml"
+WORK_DIR="/work/fuchs/agmisc/cmiel/road_ml"
+CONTAINER_SIF="${WORK_DIR}/containers/road_ml.sif"
+DATA_TAR="${WORK_DIR}/data/national_features_v1.tar"
+ROADS_SHP="${WORK_DIR}/data/shapefiles/DistrictRoads_with training data.shp"
+OUTPUT_DIR="${WORK_DIR}/results/m5_monolithic_${SLURM_JOB_ID}"
 
 LOCAL_SCRATCH="/localscratch/${SLURM_JOB_ID}"
 if [ ! -d "/localscratch" ]; then
@@ -48,7 +49,7 @@ mkdir -p "${LOCAL_SCRATCH}/data"
 mkdir -p "${LOCAL_SCRATCH}/output"
 mkdir -p "${JOBLIB_TEMP_FOLDER}"
 mkdir -p "${OUTPUT_DIR}"
-mkdir -p "${PROJECT_DIR}/logs"
+mkdir -p "${WORK_DIR}/logs"
 
 # 3. Robust POSIX Signal Trap for Zero-Orphan Scratch Cleanup
 cleanup_scratch() {
@@ -71,27 +72,30 @@ if [ -f "${DATA_TAR}" ]; then
     tar -C "${LOCAL_SCRATCH}/data" -xf "${DATA_TAR}"
     t_stage_elapsed=$(( $(date +%s) - t_stage_start ))
     echo "[STAGE-IN] Completed transfer in ${t_stage_elapsed} seconds."
-elif [ -d "${PROJECT_DIR}/data/parquet_national" ]; then
-    echo "[STAGE-IN] Staging Parquet files from ${PROJECT_DIR}/data/parquet_national to local scratch..."
-    cp -r "${PROJECT_DIR}/data/parquet_national"/* "${LOCAL_SCRATCH}/data/"
+elif [ -d "${WORK_DIR}/data/parquet_national" ]; then
+    echo "[STAGE-IN] Staging Parquet files from ${WORK_DIR}/data/parquet_national to local scratch..."
+    cp -r "${WORK_DIR}/data/parquet_national"/* "${LOCAL_SCRATCH}/data/"
 else
-    echo "[STAGE-IN] Using ${PROJECT_DIR}/data directly."
-    LOCAL_SCRATCH_DATA="${PROJECT_DIR}/data"
+    echo "[STAGE-IN] Using ${WORK_DIR}/data directly."
 fi
 
 DATA_INPUT="${LOCAL_SCRATCH}/data"
 if [ ! "$(ls -A "${DATA_INPUT}" 2>/dev/null)" ]; then
-    DATA_INPUT="${PROJECT_DIR}/data/parquet_national"
+    DATA_INPUT="${WORK_DIR}/data/parquet_national"
 fi
 
 # 5. Execute Training (Apptainer OR Native Python Environment)
+cd "${CODE_DIR}"
+export PYTHONPATH="${CODE_DIR}:${PYTHONPATH:-}"
+
 echo "[EXECUTION] Launching Model M5 Training with NUMA Interleaving..."
 if [ -f "${CONTAINER_SIF}" ]; then
     apptainer exec \
-        --bind "${PROJECT_DIR}:${PROJECT_DIR}" \
+        --bind "${WORK_DIR}:${WORK_DIR}" \
+        --bind "${CODE_DIR}:${CODE_DIR}" \
         --bind "${LOCAL_SCRATCH}:${LOCAL_SCRATCH}" \
         "${CONTAINER_SIF}" \
-        numactl --interleave=all python "${PROJECT_DIR}/train_rf.py" \
+        numactl --interleave=all python "${CODE_DIR}/train_rf.py" \
             --model m5 \
             --mode cv \
             --scope national \
@@ -111,11 +115,11 @@ else
     if [ -f "${HOME}/my_environments/geo_env/bin/activate" ]; then
         echo "[ENV] Activating existing geo_env..."
         source "${HOME}/my_environments/geo_env/bin/activate"
-    elif [ -f "${PROJECT_DIR}/venv/bin/activate" ]; then
+    elif [ -f "${WORK_DIR}/venv/bin/activate" ]; then
         echo "[ENV] Activating project venv..."
-        source "${PROJECT_DIR}/venv/bin/activate"
+        source "${WORK_DIR}/venv/bin/activate"
     fi
-    numactl --interleave=all python "${PROJECT_DIR}/train_rf.py" \
+    numactl --interleave=all python "${CODE_DIR}/train_rf.py" \
         --model m5 \
         --mode cv \
         --scope national \

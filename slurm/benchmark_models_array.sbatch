@@ -1,17 +1,17 @@
 #!/bin/bash
 # ==============================================================================
-# SLURM ARRAY SCRIPT: MODEL SPECIFICATION BENCHMARK (M1 TO M7 ACROSS 5 SEEDS)
+# SLURM ARRAY SCRIPT: MODEL SPECIFICATION BENCHMARK (7 MODELS ACROSS 5 SEEDS)
 # CLUSTER: FUCHS-CSC (Goethe University Frankfurt)
 # ==============================================================================
-#SBATCH --job-name=rf_benchmark_m1_m7
+#SBATCH --job-name=rf_bench_7m
 #SBATCH --partition=fuchs
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
 #SBATCH --hint=nomultithread
 #SBATCH --mem=80G
-#SBATCH --time=03:30:00
-#SBATCH --array=1-35%10
+#SBATCH --time=10:00:00
+#SBATCH --array=1-7
 #SBATCH --output=/work/fuchs/agmisc/cmiel/road_ml/logs/benchmark_%A_%a.out
 #SBATCH --error=/work/fuchs/agmisc/cmiel/road_ml/logs/benchmark_%A_%a.err
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -19,20 +19,16 @@
 
 set -euo pipefail
 
-# 1. Map Slurm Array Index (1-35) to (Model, Seed)
+# 1. Map Slurm Array Index (1-7) to Model
 MODELS=(m1 m2 m3 m4 m5 m6 m7)
+MODEL_IDX=$((SLURM_ARRAY_TASK_ID - 1))
+MODEL=${MODELS[$MODEL_IDX]}
+
 SEEDS=(42 101 202 303 404)
 
-INDEX=$((SLURM_ARRAY_TASK_ID - 1))
-MODEL_IDX=$((INDEX / 5))
-SEED_IDX=$((INDEX % 5))
-
-MODEL=${MODELS[$MODEL_IDX]}
-SEED=${SEEDS[$SEED_IDX]}
-
-echo "=== [JOB START] FUCHS-CSC SLURM ARRAY: ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} ==="
+echo "=== [JOB START] FUCHS-CSC BENCHMARK TASK: ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} ==="
 echo "Node: $(hostname) | Allocated Cores: ${SLURM_CPUS_PER_TASK}"
-echo "Model: ${MODEL^^} | Seed: ${SEED}"
+echo "Model: ${MODEL^^} | Evaluating 5 Stratified Seeds: ${SEEDS[*]}"
 echo "Start Time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
 # 2. Thread Management: Prevent CPU thread thrashing
@@ -84,25 +80,32 @@ elif [ -f "${WORK_DIR}/venv/bin/activate" ]; then
     source "${WORK_DIR}/venv/bin/activate"
 fi
 
-# 6. Execute Model Cross-Validation with Master Stratified Splits
-echo "[EXECUTION] Launching Model ${MODEL^^} (Seed ${SEED})..."
-python "${CODE_DIR}/train_rf.py" \
-    --model "${MODEL}" \
-    --mode cv \
-    --scope national \
-    --features-dir "${DATA_INPUT}" \
-    --roads-shp "${ROADS_SHP}" \
-    --splits-file "${SPLITS_FILE}" \
-    --output-dir "${OUTPUT_DIR}" \
-    --scratch-dir "${LOCAL_SCRATCH}" \
-    --seed "${SEED}" \
-    --n-trees 300 \
-    --max-depth 25 \
-    --min-samples-split 10 \
-    --min-samples-leaf 4 \
-    --criterion entropy \
-    --class-weight balanced \
-    --n-jobs ${SLURM_CPUS_PER_TASK} \
-    --backend threading
+# 6. Execute Model Cross-Validation across all 5 Seeds
+for SEED in "${SEEDS[@]}"; do
+    echo "----------------------------------------------------------------------"
+    echo "[EXECUTION] Model: ${MODEL^^} | Seed: ${SEED} | Time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    echo "----------------------------------------------------------------------"
 
-echo "=== [TASK COMPLETE] Finished Model ${MODEL^^} (Seed ${SEED}): $(date -u +'%Y-%m-%dT%H:%M:%SZ') ==="
+    python "${CODE_DIR}/train_rf.py" \
+        --model "${MODEL}" \
+        --mode cv \
+        --scope national \
+        --features-dir "${DATA_INPUT}" \
+        --roads-shp "${ROADS_SHP}" \
+        --splits-file "${SPLITS_FILE}" \
+        --output-dir "${OUTPUT_DIR}" \
+        --scratch-dir "${LOCAL_SCRATCH}" \
+        --seed "${SEED}" \
+        --n-trees 300 \
+        --max-depth 25 \
+        --min-samples-split 10 \
+        --min-samples-leaf 4 \
+        --criterion entropy \
+        --class-weight balanced \
+        --n-jobs ${SLURM_CPUS_PER_TASK} \
+        --backend threading
+
+    echo "[SEED COMPLETE] Model ${MODEL^^} with Seed ${SEED} finished successfully."
+done
+
+echo "=== [TASK COMPLETE] Finished All 5 Seeds for Model ${MODEL^^}: $(date -u +'%Y-%m-%dT%H:%M:%SZ') ==="

@@ -87,6 +87,7 @@ class PathConfig:
     scratch_dir: Path = Path(os.environ.get("TMPDIR", "/localscratch"))
     output_dir: Path = Path(os.environ.get("OUTPUT_DIR", "/work/fuchs/agmisc/cmiel/road_ml/results"))
     archive_tar: Path = Path(os.environ.get("DATA_TAR", "/work/fuchs/agmisc/cmiel/road_ml/data/national_features_v1.tar"))
+    splits_file: Optional[Path] = None
 
 @dataclass
 class RFHyperparameters:
@@ -119,6 +120,8 @@ class PipelineConfig:
     fold: Optional[int] = None
     k_folds: int = 5
     test_fraction: float = 0.15
+    splits_file: Optional[Path] = None
+    seed: int = 42
     paths: PathConfig = field(default_factory=PathConfig)
     rf_params: RFHyperparameters = field(default_factory=RFHyperparameters)
     hardware: HardwareConfig = field(default_factory=HardwareConfig)

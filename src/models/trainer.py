@@ -5,6 +5,7 @@ Implements leak-free GroupKFold cross-validation, 20-core joblib threading/loky,
 and comprehensive out-of-fold prediction tracking.
 """
 
+import os
 import time
 from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
@@ -43,12 +44,37 @@ def train_and_evaluate_cv(
     Guarantees no spatial data leakage: all observations from a road belong
     strictly to either training folds or the validation fold.
     """
-    gkf = GroupKFold(n_splits=config.k_folds)
     n_samples = len(y)
-
     oof_predictions = np.zeros(n_samples, dtype=np.int8)
     oof_probabilities = np.zeros(n_samples, dtype=np.float32)
     fold_metrics: List[Dict[str, float]] = []
+
+    # Check for canonical master split file
+    splits_file = config.splits_file or config.paths.splits_file
+    fold_splits: List[Tuple[np.ndarray, np.ndarray]] = []
+
+    if splits_file and os.path.exists(splits_file):
+        print(f"[SPLITS] Enforcing master stratified split file: {splits_file}")
+        splits_df = pd.read_csv(splits_file)
+        splits_df["road_id"] = splits_df["road_id"].astype(str)
+        road_id_series = pd.Series(road_ids).astype(str)
+
+        seed_col = f"fold_seed_{config.seed}"
+        if seed_col not in splits_df.columns:
+            fold_cols = [c for c in splits_df.columns if c.startswith("fold_seed_")]
+            seed_col = fold_cols[0] if fold_cols else "fold"
+        print(f"[SPLITS] Active split partition: {seed_col} (Seed: {config.seed})")
+
+        road_to_fold = dict(zip(splits_df["road_id"], splits_df[seed_col]))
+        sample_folds = road_id_series.map(road_to_fold).to_numpy()
+
+        for f in range(config.k_folds):
+            val_idx = np.where(sample_folds == f)[0]
+            train_idx = np.where(sample_folds != f)[0]
+            fold_splits.append((train_idx, val_idx))
+    else:
+        gkf = GroupKFold(n_splits=config.k_folds)
+        fold_splits = list(gkf.split(X, y, groups=road_ids))
 
     print(f"\n{'='*70}")
     print(f"STARTING {config.k_folds}-FOLD GROUP-KFOLD CROSS-VALIDATION")
@@ -58,7 +84,7 @@ def train_and_evaluate_cv(
 
     start_total = time.time()
 
-    for fold_idx, (train_idx, val_idx) in enumerate(gkf.split(X, y, groups=road_ids)):
+    for fold_idx, (train_idx, val_idx) in enumerate(fold_splits):
         fold_num = fold_idx + 1
         print(f"--- FOLD {fold_num}/{config.k_folds} ---")
         t0 = time.time()

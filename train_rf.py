@@ -51,6 +51,8 @@ def parse_cli_args() -> PipelineConfig:
                         help="Destination directory for serialized models, metrics, and logs.")
     parser.add_argument("--scratch-dir", type=str, default=os.environ.get("TMPDIR", "/localscratch"),
                         help="Fast node-local scratch storage path.")
+    parser.add_argument("--splits-file", type=str, default=None,
+                        help="Path to pre-computed master CV splits table (master_cv_splits_5seeds.csv).")
 
     # Model Hyperparameters
     parser.add_argument("--n-trees", type=int, default=500, help="Number of trees in Random Forest.")
@@ -72,11 +74,13 @@ def parse_cli_args() -> PipelineConfig:
     args = parser.parse_args()
 
     # Build strongly-typed PipelineConfig
+    splits_path = Path(args.splits_file) if args.splits_file else None
     paths = PathConfig(
         features_dir=Path(args.features_dir),
         roads_shp=Path(args.roads_shp),
         scratch_dir=Path(args.scratch_dir),
-        output_dir=Path(args.output_dir)
+        output_dir=Path(args.output_dir),
+        splits_file=splits_path
     )
 
     max_depth = None if args.max_depth == 0 else args.max_depth
@@ -102,6 +106,8 @@ def parse_cli_args() -> PipelineConfig:
         scope=args.scope,
         mode=args.mode,
         fold=args.fold,
+        splits_file=splits_path,
+        seed=args.seed,
         paths=paths,
         rf_params=rf_params,
         hardware=hardware
@@ -143,23 +149,33 @@ def main():
     if config.mode == "cv":
         results = train_and_evaluate_cv(X, y, road_ids, feature_cols, config)
 
-        # Save Metrics
-        metrics_file = config.paths.output_dir / "metrics" / f"metrics_{config.model_name}_{config.scope}.json"
+        results["summary_stats"]["model"] = config.model_name.upper()
+        results["summary_stats"]["seed"] = config.seed
+        results["summary_stats"]["n_features"] = len(feature_cols)
+
+        # Save Metrics with seed annotation
+        metrics_file = config.paths.output_dir / "metrics" / f"metrics_{config.model_name}_{config.scope}_seed_{config.seed}.json"
         with open(metrics_file, "w") as f:
             json.dump(results["summary_stats"], f, indent=2)
         print(f"[ARTIFACT] Summary metrics written to: {metrics_file}")
 
-        # Also fit final production model after CV
-        model, importances, fit_time = train_full_production_model(X, y, feature_cols, config)
-        model_file = config.paths.output_dir / "models" / f"RF_{config.model_name.upper()}_{config.scope}_full.joblib"
-        joblib.dump({"model": model, "features": feature_cols, "config": vars(config.rf_params)},
-                    model_file, compress=("zlib", 3))
-        print(f"[ARTIFACT] Final production model serialized to: {model_file}")
+        # Default unseeded file copy
+        canonical_metrics = config.paths.output_dir / "metrics" / f"metrics_{config.model_name}_{config.scope}.json"
+        with open(canonical_metrics, "w") as f:
+            json.dump(results["summary_stats"], f, indent=2)
 
-        # Save Feature Importance
-        imp_file = config.paths.output_dir / "importance" / f"importance_{config.model_name}_{config.scope}.csv"
-        importances.to_csv(imp_file, header=["importance"])
-        print(f"[ARTIFACT] Feature importances saved to: {imp_file}")
+        # Fit final production model after CV (only if seed == 42 to save time in multi-seed benchmarks)
+        if config.seed == 42:
+            model, importances, fit_time = train_full_production_model(X, y, feature_cols, config)
+            model_file = config.paths.output_dir / "models" / f"RF_{config.model_name.upper()}_{config.scope}_full.joblib"
+            joblib.dump({"model": model, "features": feature_cols, "config": vars(config.rf_params)},
+                        model_file, compress=("zlib", 3))
+            print(f"[ARTIFACT] Final production model serialized to: {model_file}")
+
+            # Save Feature Importance
+            imp_file = config.paths.output_dir / "importance" / f"importance_{config.model_name}_{config.scope}.csv"
+            importances.to_csv(imp_file, header=["importance"])
+            print(f"[ARTIFACT] Feature importances saved to: {imp_file}")
 
     elif config.mode == "single_fold":
         if config.fold is None:
